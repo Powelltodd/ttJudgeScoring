@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- &mdash; as an ENTITY, not a literal em dash. localhost:8081 is the
+       Delphi dev web server, which serves every static file as ISO-8859-1
+       no matter what web.config or <meta charset> say, and an HTTP charset
+       beats the meta tag — so a literal UTF-8 em dash here renders as
+       mojibake in the browser tab. The entity is plain ASCII and survives
+       either decoding. Keep rendered text ASCII-safe in this app; comments
+       are free to use whatever, they are never decoded for display. -->
+  <title>Judge Scoring &mdash; SportzSoft</title>
+
+  <!--
+    ttJudgeScoring — the Trampoline & Tumbling judge app.
+
+    ONE PAGE, TWO SCREENS: the Access Code / PIN login, and the judge's
+    flight schedule. They were two documents with a meetWeb.dll round trip
+    between them (ttJudgeScoring/ttJudgeLogin.html ->
+    meetWeb.dll/ttJudgeSchedule -> Team/ttJudgeSchedule.html). That hop
+    existed ONLY so Delphi could substitute <#JudgeId>, <#LoginUserId> and
+    <#JudgeName> into the schedule template. ValidateJudgePIN already
+    returns those values over TeamRest, so in a single page they are simply
+    state and the redirect disappears.
+
+    TT ONLY, DELIBERATELY. The name carries the tt prefix because the whole
+    app is Trampoline & Tumbling — the scoring model (execution judges,
+    skills, TOF/HD/DD/Synch) does not transfer to Artistic or any other
+    discipline. It is not a general "judge app" waiting to be generalised.
+
+    NOT A SCREEN INSIDE apps/LiveMeet. LiveMeet is the meet organizer's
+    portal — 24 screens behind an organizer session. This is one accordion
+    behind an Access Code and a PIN, for a judge standing at a panel.
+    Different audience, different auth, different branding, different
+    lifecycle. What the two genuinely share is the flight/scoring panel,
+    and that is shared as a folder (apps/_shared/tnt), not by merging the
+    two apps into one shell.
+  -->
+
+  <!-- Bootstrap 5.3 + Icons + jQuery 3.7.1 via CDN. Same versions as
+       apps/LiveMeet so the shared TNT panel renders identically in both. -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <!-- jQuery UI: the TNT panel still opens real .dialog()s for a few
+       things (release notes, flight settings) and osServerAccess's grid
+       column editor needs it. Same version LiveMeet loads. -->
+  <link href="/../Scripts/jquery-ui-1.12.1/jquery-ui.css" rel="stylesheet" />
+  <script src="/../Scripts/jquery-ui-1.12.1/jquery-ui.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- SHARED TNT skin. Same file apps/LiveMeet links, sitting beside the
+       TNTDialogs/TNTTemplates fragments it skins. Scoped under .lm-tnt —
+       read that as a token, not a reference to LiveMeet (see the header in
+       tnt.css). This app does NOT load lm.css, so tnt.css falls back to
+       the px literals in its var() defaults, which is supported. -->
+  <link href="/../apps/_shared/tnt/tnt.css" rel="stylesheet" />
+  <link href="assets/css/tt.css" rel="stylesheet" />
+
+  <!-- SportzSoft framework, loaded as CLASSIC scripts by ssLoadScripts.js.
+       app.js is a separate ES module below: the $.getScript() chain in
+       ssLoadScripts.js cannot parse import/export, and this layer sets
+       window globals (thePageController, thisMeet, ssMeet, serverAPI, …)
+       that the module reads directly. Same split LiveMeet and Portal use. -->
+  <script src="/../Scripts/ssLoadScripts.js?V=1.21"></script>
+  <script>
+  // ORDER MATTERS — several of these declare `class X extends Y` at file
+  // scope, so a base class that has not loaded yet is a ReferenceError
+  // that kills the whole file. This is LiveMeet's proven order, trimmed to
+  // what the judge path touches and with MeetTNT.js appended.
+  //
+  // MeetTNT.js is in the array rather than lazy-loaded the way LiveMeet
+  // does it: LiveMeet defers it because it is ~380KB and useless on an
+  // artistic meet, but here it IS the application — every screen needs it,
+  // so there is nothing to defer for.
+  var scriptsArray = [
+      'osServerAccess.js?UseMin=true',
+      'domRoutines.js',
+      'gridRoutines.js',
+      'ssTranslate.js',
+      'ssOrganization.js',
+      'ssProfilesAccess.js',
+      'ssRegistration.js',
+      'ssSeason.js',
+      'ssMeetAccess.js',
+      'ssMeetCommon.js',
+      'Visibility.core.js',
+      'Visibility.timers.js',
+      'MeetTNT.js'
+  ];
+  </script>
+</head>
+<body>
+
+<!-- Refuse-to-boot message, shown by app.js when the page cannot come up
+     at all (framework failed to load, or a screen was asked for with no
+     session behind it). Both screens start hidden so a failure never
+     leaves a judge looking at an empty shell. -->
+<div id="ttBootMsg" class="d-none tt-boot">
+  <div class="tt-boot-card">
+    <div class="d-flex align-items-center gap-2 mb-2">
+      <i class="bi bi-exclamation-triangle-fill tt-boot-icon"></i>
+      <h5 id="ttBootMsgHead" class="m-0 fw-bold">Unable to open</h5>
+    </div>
+    <div id="ttBootMsgBody" class="tt-boot-body"></div>
+  </div>
+</div>
+
+<!-- ===================== LOGIN ===================== -->
+<!-- Two panels, one at a time. The ids and the d-none toggling are the
+     contract InitMeetJudgeLogin() in Scripts/MeetTNT.js drives — it does
+     addClass/removeClass('d-none') on #pnAccessCode and #pnJudgePIN, and
+     writes into #txMeet / #txAccessCodeMsgs / #txPINMsgs. Keep them. -->
+<section id="screen-login" class="tt-screen d-none">
+  <div class="tt-login-wrap">
+    <div class="tt-login-card">
+      <img class="tt-logo" src="/../ttJudgeScoring/assets/img/ssJudgeScoringLogo.png" alt="SportzSoft Judge Scoring" />
+      <h5 class="tt-login-title">Judge Scoring</h5>
+
+      <div id="pnAccessCode">
+        <p class="tt-login-help">Enter the access code for this meet.</p>
+        <form autocomplete="off" onsubmit="return false;">
+          <div class="mb-3">
+            <label class="form-label" for="edAccessCode">Meet access code</label>
+            <input class="form-control tt-code-input" type="password" id="edAccessCode" autocomplete="new-password" />
+          </div>
+          <div class="d-grid mb-2">
+            <button class="btn btn-primary" type="button" id="btJudgeAccessCode">Continue</button>
+          </div>
+          <div class="tt-msg" id="txAccessCodeMsgs"></div>
+        </form>
+      </div>
+
+      <div id="pnJudgePIN" class="d-none">
+        <p class="tt-login-help">Meet: <strong id="txMeet"></strong></p>
+        <form autocomplete="off" onsubmit="return false;">
+          <div class="mb-3">
+            <label class="form-label" for="edPIN">Your judge PIN</label>
+            <!-- inputmode numeric so a phone/tablet offers the number pad;
+                 ValidateJudgePIN rejects anything non-numeric anyway. -->
+            <input class="form-control tt-code-input" type="text" id="edPIN"
+                   inputmode="numeric" autocomplete="off" />
+          </div>
+          <div class="d-grid gap-2 mb-2">
+            <button class="btn btn-primary" type="button" id="btJudgePIN">Continue</button>
+            <button class="btn btn-outline-secondary btn-sm" type="button" id="btJudgePINReset">Use a different meet</button>
+          </div>
+          <div class="tt-msg" id="txPINMsgs"></div>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== SCHEDULE ===================== -->
+<!-- .lm-tnt on the SECTION, not on #pnSchedule.
+
+     EnsureFlightPanelChrome() (Scripts/MeetTNT.js) reparents #dgTNTFlight
+     with $('#pnSchedule').after($panel) — the flight panel becomes a
+     SIBLING of #pnSchedule and takes over its space. So the scope class
+     has to sit on their shared parent, or the panel lands outside it and
+     renders unstyled. Same reasoning as apps/LiveMeet's
+     <section class="lm-screen lm-tnt" id="screen-schedule">. -->
+<section id="screen-schedule" class="tt-screen lm-tnt d-none">
+  <div class="container-lg">
+
+    <div class="tt-sched-head">
+      <h5 class="m-0 fw-bold">Judge Scoring</h5>
+      <img src="/../ttJudgeScoring/assets/img/ssJudgeScoringLogo.png" height="56" alt="" />
+      <h6 class="m-0 text-end" id="meetName"></h6>
+    </div>
+
+    <!-- OUTSIDE #pnSchedule on purpose, so it stays put while the flight
+         panel takes over the schedule body below it. -->
+    <div class="tt-sched-bar">
+      <div class="d-flex gap-2">
+        <button class="btn btn-primary btn-sm" type="button" id="btJudgeBack" onclick="OpenJudgePINEntry()">Back</button>
+        <button class="btn btn-primary btn-sm" type="button" id="btJudgeRefresh" onclick="RefreshJudgeSchedule()">Refresh</button>
+      </div>
+      <div class="text-muted small d-none d-md-block">(F11 toggles full screen)</div>
+      <h6 class="m-0">Judge:&nbsp;<span id="txJudgeName"></span></h6>
+    </div>
+
+    <!-- The schedule body the flight panel swaps with. Same id as
+         apps/LiveMeet/html/Schedule.html and Team/toSessionsTNT.html —
+         one id across every host is what lets the panel swap be one line
+         of shared JS instead of three special cases. -->
+    <div id="pnSchedule">
+      <div class="accordion" role="tablist" id="acJudge"></div>
+      <footer class="tt-legend">
+        <div class="fw-bold me-3">Legend:</div>
+        <div><i class="bi bi-square-fill legend-Pending"></i><span>Pending</span></div>
+        <div><i class="bi bi-square-fill legend-Active"></i><span>Active</span></div>
+        <div><i class="bi bi-square-fill legend-Completed"></i><span>Completed</span></div>
+        <div><i class="bi bi-square-fill legend-Verified"></i><span>Verified</span></div>
+      </footer>
+    </div>
+
+  </div>
+</section>
+
+<!-- Release-notes dialog host. CheckForRecentJudgeScoringReleaseNotes()
+     fills this and opens it as a jQuery UI dialog. -->
+<div id="dgReleaseNotes"></div>
+
+<!-- ===================== JUDGE TEMPLATES ===================== -->
+<!-- Carried over from Team/ttJudgeSchedule.html unchanged — they were
+     already Bootstrap 5. MergeData() fills the {{…}} tokens from an
+     ssMeet JudgeSegment; MeetLoadedForJudgeSchedule() clones them by bare
+     id, so these must exist exactly once on the page.
+
+     Judge-app specific, so they live HERE and not in apps/_shared/tnt —
+     that folder is only for markup BOTH apps use. -->
+<template id="tmAccordionItem" style="display:none;">
+  <div class="accordion-item" id="ac{{DayNo}}">
+      <h4 class="accordion-header" role="tab"><button class="accordion-button p-2" type="button" data-bs-toggle="collapse" data-bs-target="#acJudge .acItem-{{DayNo}}" aria-expanded="true" aria-controls="acJudge .acItem-{{DayNo}}" style="color: #236dc2;"><strong>{{ScheduleDate}}</strong></button></h4>
+      <div class="accordion-collapse acItem-{{DayNo}} show" role="tabpanel" data-bs-parent="#acJudge">
+        <div class="accordion-body p-2">
+          <p class="mb-0 acContent">content</p>
+        </div>
+      </div>
+  </div>
+</template>
+
+<template id="tmFlightCard" style="display:none;">
+  <div class="card flightCard flight-{{Status}}" style="margin-bottom:6px;" data-id="{{MeetTimeBlockSegmentId}}">
+    <div class="card-body shadow-sm justify-content-between flCard-Body">
+      <div class="row">
+        <div class="col-3">
+          <h6 style="font-weight: bold;">{{StartEndTime}}</h6>
+          <h6 class="flBlock">Block # {{BlockNumber}}</h6>
+        </div>
+        <div class="col">
+          <div class="d-flex justify-content-between">
+            <div class="flFlightLabel">{{SegmentLabel}}</div>
+          </div>
+          <div class="d-flex justify-content-between">
+            <h6 class="mt-2">{{SportEventName}}</h6><button class="btn btn-secondary btn-sm btOpenFlight" type="button">Open</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<!-- ===================== TNT ENGINE HOSTS ===================== -->
+<!-- #lmTntInputs recreates the TeamWeb hidden fields Scripts/MeetTNT.js
+     reads directly. Same ids LiveMeet uses, because it is the same file
+     reading them.
+
+     #JudgeLoginEvent IS THE DIFFERENCE BETWEEN THE TWO APPS. LiveMeet pins
+     it BLANK; this app SETS it. UserHasReadOnlyAccess() (MeetTNT.js:379)
+     is `($('#JudgeLoginEvent').val() != '') || (FReadOnlyModeClubId > 0)`,
+     so a non-empty value is what marks the session as a judge login and
+     hides the organizer-only operations. app.js fills it after login.
+
+     #lmTntTemplates and #lmTntDialogs take the shared fragments, loaded
+     once by assets/js/tnt.js. Ids kept as lm* rather than tt*: they are
+     just host divs, and matching LiveMeet means one less thing that
+     differs between two apps running identical panel code. -->
+<div id="lmTntInputs" hidden>
+  <input type="hidden" id="SessionId" value="" />
+  <input type="hidden" id="TournamentId" value="" />
+  <input type="hidden" id="MeetDiscipline" value="" />
+  <input type="hidden" id="JudgeLoginEvent" value="" />
+  <input type="hidden" id="JudgeId" value="" />
+  <input type="hidden" id="JudgeName" value="" />
+  <input type="hidden" id="LoginUserId" value="" />
+</div>
+<div id="lmTntTemplates"></div>
+<!-- lm-tnt scopes tnt.css onto the dialog markup while it is parked here,
+     before EnsureFlightPanelChrome moves #dgTNTFlight next to
+     #pnSchedule (which is inside its own .lm-tnt section above). -->
+<div id="lmTntDialogs" class="lm-tnt"></div>
+
+<script type="module" src="assets/js/app.js"></script>
+
+<!-- Boot handshake. The framework loads ASYNCHRONOUSLY (the $.getScript
+     chain in ssLoadScripts.js) while app.js is a deferred module — neither
+     can assume it finished first, so each signals the other and whichever
+     arrives last does the boot. Copied from apps/LiveMeet/index.html; it
+     is the same two-script-worlds problem. -->
+<script>
+  window.__ttFrameworkReady = false;
+  $(document).ready(function () {
+    LoadAllScripts(document.location.href.indexOf('localhost') === -1, function () {
+      window.__ttFrameworkReady = true;
+      if (typeof window.ttBoot === 'function') window.ttBoot();
+    });
+  });
+</script>
+</body>
+</html>

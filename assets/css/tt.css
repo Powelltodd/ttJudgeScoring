@@ -1,0 +1,170 @@
+/* tt.css — the judge app's own shell.
+ *
+ * SCOPE: this file styles the login screen, the schedule header/legend and
+ * the flight cards. It does NOT style the flight scoring panel — that is
+ * apps/_shared/tnt/tnt.css, shared verbatim with apps/LiveMeet, and
+ * nothing here may reach into its se-/sm- class namespaces. If a scoring
+ * panel tweak is wanted, it belongs in the shared file so both apps get
+ * it, not here where it would silently fork the two.
+ *
+ * This app deliberately does not load apps/LiveMeet/assets/css/lm.css —
+ * that is a sidebar-portal shell for a different app. tnt.css falls back
+ * to the px literals in its own var() defaults, which is a supported path
+ * (dev/ScorePanelPreview.html relies on the same fallback).
+ *
+ * Carried over from ttJudgeScoring/assets/css/ttJudgeScoring.css and the
+ * inline <style> block in Team/ttJudgeSchedule.html: the flight status
+ * colours, the flight card type sizes, and the fullscreen body rules.
+ * Those colours are LEARNED — judges read flight state by colour at a
+ * glance across a gym — so they are kept at their exact legacy values
+ * rather than remapped onto Bootstrap's palette.
+ */
+
+:root {
+  --tt-orange: #ff9900;
+  --tt-blue:   #236dc2;
+}
+
+body {
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 13px;
+  background: #f6f7f9;
+}
+h6 { font-size: 14px; }
+
+/* Screens are swapped by app.js toggling .d-none, not by the router
+   apps/LiveMeet uses — there are only two of them and no deep links. */
+.tt-screen { display: block; }
+
+/* ---------- refuse-to-boot card ---------- */
+
+.tt-boot {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.tt-boot-card {
+  max-width: 520px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 28px 30px;
+  box-shadow: 0 4px 16px rgba(15,29,58,.08);
+}
+.tt-boot-icon { color: var(--tt-orange); font-size: 22px; }
+.tt-boot-body { font-size: 14px; color: #475569; line-height: 1.55; }
+
+/* ---------- login ---------- */
+
+/* Centred card rather than the old full-bleed form. A judge signs in once,
+   standing at a panel, often on a phone — the whole interaction is two
+   short codes and it should not look like a page. */
+.tt-login-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+.tt-login-card {
+  width: 100%;
+  max-width: 380px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 28px 26px 22px;
+  box-shadow: 0 4px 16px rgba(15,29,58,.08);
+  text-align: center;
+}
+.tt-logo { max-height: 74px; margin-bottom: 10px; }
+.tt-login-title { font-weight: 700; margin-bottom: 18px; }
+.tt-login-help  { font-size: 13px; color: #64748b; margin-bottom: 18px; }
+.tt-login-card .form-label { font-size: 12px; font-weight: 600; color: #475569; text-align: left; display: block; }
+
+/* Both codes are short and read back character by character, so they get
+   room and tracking rather than the default input treatment. */
+.tt-code-input {
+  text-align: center;
+  font-size: 20px;
+  letter-spacing: .18em;
+  padding: 8px 10px;
+}
+
+/* MeetTNT.js writes <font color="red"> / <font color="white"> into these.
+   The white was for the old dark page and is invisible on this card, so
+   the colour is forced here — restyling the message box is far cheaper
+   than rewriting those writes in a file the old pages still run. */
+.tt-msg { min-height: 20px; font-size: 13px; }
+.tt-msg font { color: #475569 !important; }
+.tt-msg font[color="red"] { color: var(--bs-danger, #dc3545) !important; }
+
+/* ---------- schedule ---------- */
+
+.tt-sched-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 0 10px;
+}
+.tt-sched-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 10px;
+}
+.tt-legend {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 14px;
+  margin: 0 4px 24px 0;
+}
+.tt-legend > div { display: flex; align-items: center; gap: 5px; }
+.tt-legend span  { font-weight: 700; }
+
+/* ---------- flight cards ----------
+   Status colours are the judge's primary signal. Legacy values kept
+   exactly; the legend swatches are the same four hues so the mapping is
+   learnable from the page itself. */
+.flight-Verified  { background-color: #1b6ac2; color: #fff; }
+.flight-Completed { background-color: #7cb1ed; color: #fff; }
+.flight-Active    { background-color: #b0d0f4; }
+.flight-Pending   { background-color: #f2f8fd; }
+
+.legend-Verified  { color: #1b6ac2; }
+.legend-Completed { color: #7cb1ed; }
+.legend-Active    { color: #b0d0f4; }
+/* Pending is near-white, so its swatch needs an outline to be visible at
+   all against the card it sits on — the other three do not. */
+.legend-Pending   { color: #f2f8fd; -webkit-text-stroke: 1px #cbd5e1; }
+
+.flCard-Body     { padding: 8px; }
+.flFlightLabel   { font-size: 17px; font-weight: 700; }
+.flBlock         { font-weight: 700; color: var(--tt-orange); }
+
+/* The one action on a card, so it is the one warm control on the screen. */
+.btOpenFlight {
+  background-color: #ff9d3a !important;
+  border-color: #eb7500 !important;
+  color: #fff !important;
+}
+.btOpenFlight:disabled { opacity: .55; }
+
+/* ---------- fullscreen ----------
+   Judges run this on F11 all day. Without these the scoring panel is
+   clipped instead of scrolled, and the backdrop paints black behind a
+   white page. */
+body:fullscreen,
+body:-webkit-full-screen {
+  overflow-y: scroll !important;
+  background-color: #fff !important;
+}
+::backdrop { background-color: #fff; }

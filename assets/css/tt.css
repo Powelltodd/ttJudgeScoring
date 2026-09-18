@@ -158,6 +158,27 @@ h6 { font-size: 14px; }
 }
 .btOpenFlight:disabled { opacity: .55; }
 
+/* ---------- organizer-only markup riding along in the shared fragment ----------
+
+   apps/_shared/tnt/TNTDialogs.html is shared verbatim with apps/LiveMeet, so
+   it brings #dgTNTFlight (which this app needs) AND #pnMeetLevelSummary —
+   the Assignments slide-out, an organizer tool a judge has no use for. It is
+   position:fixed, so it floated OVER this app's schedule as clutter rather
+   than being covered by it.
+
+   Hidden here rather than cut from the fragment, because LiveMeet genuinely
+   needs it. This is the SECOND thing to leak in this way — btCleanFlight was
+   the first. A third would be the signal to split that fragment into a panel
+   part and an organizer part instead of hiding pieces one at a time.
+
+   !important because MeetTNT.js .show()s both of these from organizer paths
+   (:836, :864, :7568) and an inline display would otherwise win.
+   CloseFlightPanel only re-shows the summary when bLevelSummaryWasOpen is
+   true, and :visible is false for a display:none element, so that flag can
+   never be set here — this guards the paths that show it unconditionally. */
+#pnMeetLevelSummary,
+#btOpenMLS { display: none !important; }
+
 /* ---------- fullscreen ----------
    Judges run this on F11 all day. Without these the scoring panel is
    clipped instead of scrolled, and the backdrop paints black behind a

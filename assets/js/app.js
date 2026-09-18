@@ -44,16 +44,24 @@ function bootFailure(sHead, sBody) {
    Login screen
    ------------------------------------------------------------------ */
 
-function showLogin() {
-  /* Stop the 30s schedule poll SetupJudgesRefresh() started. Without this
-     it keeps firing against a session the judge has just stepped out of,
-     and every tick throws once the session is gone. */
+/* Stop the 30s schedule poll SetupJudgesRefresh() started.
+
+   Needed on the way OUT — it keeps firing against a session the judge has
+   just left, and every tick throws once that session is gone — and on a
+   REFRESH, because MeetLoadedForJudgeSchedule calls SetupJudgesRefresh
+   again, so without stopping first every refresh would leave another timer
+   running against the same schedule. */
+function stopScheduleTimer() {
   try {
     if (typeof judgeScheduleTimer !== 'undefined' && judgeScheduleTimer !== null) {
       Visibility.stop(judgeScheduleTimer);
       judgeScheduleTimer = null;
     }
   } catch (err) { /* timer never started */ }
+}
+
+function showLogin() {
+  stopScheduleTimer();
 
   judgeSession = { sessionId: '', judgeId: '', judgeName: '' };
   $('#JudgeLoginEvent').val('');
@@ -125,6 +133,26 @@ function openSchedule() {
   });
 }
 
+/* The Refresh button, via the window.ttJudgeRefreshSchedule seam that
+   RefreshJudgeSchedule() in MeetTNT.js checks for.
+
+   That function is location.reload() for the old TeamWeb page, which
+   carries JudgeId and SessionId in its query string and so comes back
+   logged in. This app holds them in memory, so a reload dropped the judge
+   straight back to PIN entry — Refresh behaved as Log out.
+
+   Rebuilding in place needs two things done first that a page reload used
+   to get for free:
+     - stop the poll timer, or SetupJudgesRefresh leaves a second one running
+     - EMPTY #acJudge, because MeetLoadedForJudgeSchedule only ever appends;
+       without this the accordion doubles on every press. */
+function refreshSchedule() {
+  if (judgeSession.sessionId === '') { showLogin(); return; }
+  stopScheduleTimer();
+  $('#acJudge').empty();
+  InitMeetJudgeSchedule(judgeSession.sessionId, judgeSession.judgeId);
+}
+
 /* ------------------------------------------------------------------
    Boot
    ------------------------------------------------------------------ */
@@ -138,8 +166,9 @@ function boot() {
      is what converts this from two documents into one page; the old
      ttJudgeScoring/ttJudgeLogin.html publishes neither and keeps its
      redirects unchanged. */
-  window.ttJudgePINValidated = onPINValidated;
-  window.ttJudgeShowLogin    = showLogin;
+  window.ttJudgePINValidated    = onPINValidated;
+  window.ttJudgeShowLogin       = showLogin;
+  window.ttJudgeRefreshSchedule = refreshSchedule;
 
   showLogin();
 }
